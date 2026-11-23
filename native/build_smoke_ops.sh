@@ -1,30 +1,60 @@
 #!/usr/bin/env bash
-# Build the Ascend 950 recipe operators and the upstream CompressorV2 in one
-# private vendor directory. Run after activating PyTorch and sourcing CANN.
-# Usage: bash build_smoke_ops.sh /path/to/ops-transformer /new/build-directory
-# Set RECIPES_ROOT if the pinned framework checkout is outside DS41_WORK.
-# Tested ops-transformer revision: ef931ccf753524513fedc6efb26eff72ab670a08
+# Build the five Ascend 950 operators and their PyTorch extension in a private directory.
+# Run after activating PyTorch and sourcing CANN.
 set -euo pipefail
 
-if [[ $# != 2 ]]; then
-    echo "Usage: $0 OPS_TRANSFORMER_CHECKOUT NEW_BUILD_DIRECTORY" >&2
-    exit 2
-fi
-upstream=$(realpath "$1")/experimental/attention/compressor_v2
-test -f "$upstream/op_kernel/compressor_v2.cpp"
-: "${ASCEND_HOME_PATH:?Source your CANN environment first}"
-repo=${RECIPES_ROOT:-"${DS41_WORK:-$HOME/dsv41-mini-work}/cann-recipes-infer"}
-if [[ ! -f "$repo/ops/ascendc/build.sh" ]]; then
-    echo "Set RECIPES_ROOT to the cann-recipes-infer directory containing ops/ascendc/build.sh." >&2
+native_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+source "$native_dir/source_revisions.sh"
+case $# in
+    1)
+        ops_root="${DS41_WORK:-$HOME/dsv41-mini-work}/src/ops-transformer"
+        output=$1
+        ;;
+    2)
+        ops_root=$1
+        output=$2
+        ;;
+    *)
+        echo "Usage: bash $0 [OPS_TRANSFORMER_CHECKOUT] NEW_BUILD_DIRECTORY" >&2
+        exit 2
+        ;;
+esac
+
+recipes="$native_dir/deps/cann-recipes-infer"
+if [[ ! -f "$recipes/ops/ascendc/build.sh" ]]; then
+    echo "Missing cann-recipes-infer. From the repository root, run: git submodule update --init --recursive" >&2
     exit 1
 fi
-mkdir "$2"
-build_dir=$(cd "$2" && pwd)
-cp -R "$repo/ops/ascendc" "$build_dir/ascendc"
+compressor_tree="$OPS_TRANSFORMER_REV:experimental/attention/compressor_v2"
+if ! git -C "$ops_root" cat-file -e "$compressor_tree/op_kernel/compressor_v2.cpp" 2>/dev/null; then
+    echo "Missing ops-transformer revision $OPS_TRANSFORMER_REV under $ops_root. Run native/prepare_sources.sh." >&2
+    exit 1
+fi
+: "${ASCEND_HOME_PATH:?Source your CANN environment first}"
+# The upstream build passes its working directory unquoted to rm and mkdir.
+build_dir=$(realpath -m -- "$output")
+case "$build_dir" in
+    *[[:space:]]*|*'*'*|*'?'*|*'['*)
+        echo "Choose a build directory without whitespace or shell wildcards: $build_dir" >&2
+        exit 2
+        ;;
+    "$recipes"|"$recipes"/*)
+        echo "Choose a build directory outside the cann-recipes-infer submodule." >&2
+        exit 2
+        ;;
+esac
+mkdir -- "$output"
 work="$build_dir/ascendc"
+mkdir "$work"
+recipe_ops=(hc_pre moe_gating_top_k_hash kv_compress_epilog_v2 swiglu_group_quant)
+sources=(CMakeLists.txt build.sh version.info cmake src/utils torch_ops_extension/setup.py torch_ops_extension/custom_ops)
+for name in "${recipe_ops[@]}"; do
+    sources+=("src/$name/CMakeLists.txt" "src/$name/op_host" "src/$name/op_kernel")
+done
+git -C "$recipes" archive HEAD:ops/ascendc -- "${sources[@]}" | tar -x -C "$work"
 op="$work/src/compressor_v2"
 mkdir "$op"
-cp -R "$upstream/op_host" "$upstream/op_kernel" "$op/"
+git -C "$ops_root" archive "$compressor_tree" -- op_host op_kernel | tar -x -C "$op"
 
 # Register the original upstream implementation with the recipe build targets.
 cat > "$op/CMakeLists.txt" <<'CMAKE'
@@ -40,8 +70,8 @@ target_compile_options(optiling PRIVATE -std=c++17)
 CMAKE
 
 cd "$work"
-OPS_CPU_NUMBER=${OPS_CPU_NUMBER:-4} bash build.sh -c ascend950 \
-    -n 'hc_pre;moe_gating_top_k_hash;kv_compress_epilog_v2;swiglu_group_quant;compressor_v2'
+op_names=$(IFS=';'; echo "${recipe_ops[*]};compressor_v2")
+OPS_CPU_NUMBER=${OPS_CPU_NUMBER:-4} bash build.sh -c ascend950 -n "$op_names"
 mkdir "$build_dir/opp"
 bash output/CANN-custom_ops-*-linux.*.run --quiet --install-path="$build_dir/opp"
 cd torch_ops_extension

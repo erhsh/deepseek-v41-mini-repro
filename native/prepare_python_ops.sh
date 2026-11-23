@@ -2,15 +2,33 @@
 # Stage the Python bridges and the DS41 operator sources in a private directory.
 set -euo pipefail
 
-if [[ $# != 3 ]]; then
-    echo "Usage: bash prepare_python_ops.sh OPS_TRANSFORMER_CHECKOUT CANNBOT_DSL_CHECKOUT NEW_OUTPUT_DIRECTORY" >&2
-    exit 2
-fi
-ops_checkout=$(realpath "$1")
-dsl_checkout=$(realpath "$2")
-output=$(realpath -m "$3")
-if [[ -e "$output" ]]; then
+native_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "$native_dir/source_revisions.sh"
+case $# in
+    1)
+        src_root="${DS41_WORK:-$HOME/dsv41-mini-work}/src"
+        ops_checkout="$src_root/ops-transformer"
+        dsl_checkout="$src_root/cannbot-dsl"
+        output=$1
+        ;;
+    3)
+        ops_checkout=$1
+        dsl_checkout=$2
+        output=$3
+        ;;
+    *)
+        echo "Usage: $0 [OPS_TRANSFORMER_CHECKOUT CANNBOT_DSL_CHECKOUT] NEW_OUTPUT_DIRECTORY" >&2
+        exit 2
+        ;;
+esac
+output=$(realpath -m -- "$output")
+if [[ -e "$output" || -L "$output" ]]; then
     echo "Output already exists: $output" >&2
+    exit 1
+fi
+if ! git -C "$ops_checkout" cat-file -e "$OPS_TRANSFORMER_REV^{commit}" 2>/dev/null ||
+   ! git -C "$dsl_checkout" cat-file -e "$CANNBOT_DSL_REV^{commit}" 2>/dev/null; then
+    echo "Missing pinned operator sources. Run bash \"$native_dir/prepare_sources.sh\" first." >&2
     exit 1
 fi
 mkdir -p "$(dirname "$output")"
@@ -18,14 +36,12 @@ work=$(mktemp -d "$(dirname "$output")/.ds41-python.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT
 mkdir -p "$work/source" "$work/package/current_provider/ops"
 
-ops_rev=ef931ccf753524513fedc6efb26eff72ab670a08
-dsl_rev=a095097ea4c66711b606c985c2a76e48ab9b0c3e
 names=(compressor_v2 indexer_prologue_k_dsl indexer_prologue_qw_dsl mixed_quant_sparse_flash_mla_dsl quant_lightning_indexer_dsl quant_sparse_lightning_indexer_dsl)
 paths=(torch_extension mc2/common/op_kernel)
 for name in "${names[@]}"; do
     paths+=("experimental/attention/$name/torch_extension")
 done
-git -C "$ops_checkout" archive "$ops_rev" "${paths[@]}" | tar -x -C "$work/source"
+git -C "$ops_checkout" archive "$OPS_TRANSFORMER_REV" "${paths[@]}" | tar -x -C "$work/source"
 (
     cd "$work/source/torch_extension"
     export TORCH_EXTENSION_VENDOR=experimental TORCH_EXTENSION_EXPERIMENTAL=TRUE
@@ -35,7 +51,7 @@ git -C "$ops_checkout" archive "$ops_rev" "${paths[@]}" | tar -x -C "$work/sourc
 )
 python -m pip install --no-index --no-deps --target "$work/package/experimental" "$work"/wheels/*.whl
 
-python - "$dsl_checkout" "$dsl_rev" "$work/package/current_provider/ops" <<'PY'
+python - "$dsl_checkout" "$CANNBOT_DSL_REV" "$work/package/current_provider/ops" <<'PY'
 import subprocess
 import sys
 import tomllib

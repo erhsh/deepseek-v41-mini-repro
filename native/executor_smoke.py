@@ -7,11 +7,31 @@ path reuses the recipe's ordinary expert routing and shared FFN.
 import argparse
 import json
 import os
+import sys
 import tempfile
 from collections import Counter
-from importlib.resources import files
+from importlib.machinery import PathFinder
+from importlib.util import module_from_spec
 from pathlib import Path
 from unittest.mock import patch
+
+RECIPES_DIR = Path(__file__).resolve().parent / 'deps' / 'cann-recipes-infer'
+if not (RECIPES_DIR / 'executor' / 'offline' / 'offline_inference.py').is_file():
+    raise SystemExit(
+        f'Missing cann-recipes-infer submodule at {RECIPES_DIR}. '
+        'From the repository root, run: git submodule update --init --recursive'
+    )
+sys.path.insert(0, str(RECIPES_DIR))
+# These upstream directories are namespace packages. Limit their search paths
+# to this checkout even if the environment also provides a package named models.
+for name in ('executor', 'models', 'module'):
+    spec = PathFinder.find_spec(name, [str(RECIPES_DIR)])
+    if spec is None:
+        raise ImportError(f'Missing upstream package {name} in {RECIPES_DIR}')
+    spec.submodule_search_locations = list(spec.submodule_search_locations)
+    package = module_from_spec(spec)
+    sys.modules[name] = package
+    spec.loader.exec_module(package)
 
 import torch
 import torch.distributed as dist
@@ -150,10 +170,10 @@ def run(args, tmp):
             assert len(outputs) == 1 and calls['vision'] > 0 and calls['prefill'] == 1 and calls['decode'] >= 1
             spec_steps = stats['spec_num_forward_ct'] if args.dspark else []
             assert not args.dspark or sum(spec_steps) > 0
-            print(json.dumps({'result': 'pass', 'calls': calls, 'finish': outputs[0].finish_reason,
-                              'output': outputs[0].output_text, 'speculative_forwards': spec_steps}), flush=True)
     finally:
         dist.destroy_process_group()
+    print(json.dumps({'result': 'pass', 'calls': calls, 'finish': outputs[0].finish_reason,
+                      'output': outputs[0].output_text, 'speculative_forwards': spec_steps}), flush=True)
 
 
 if __name__ == '__main__':
@@ -161,7 +181,7 @@ if __name__ == '__main__':
     default_source = Path.home() / 'dsv41-mini-work' / 'model'
     parser.add_argument('--source', type=Path, default=Path(os.environ.get('MODEL_SOURCE', default_source)),
                         help='Directory containing the official config.json and chat_template.jinja.')
-    model_config_dir = files('models.deepseek_v4_1').joinpath('config')
+    model_config_dir = RECIPES_DIR / 'models' / 'deepseek_v4_1' / 'config'
     parser.add_argument('--recipe', type=Path,
                         default=model_config_dir.joinpath('deepseek_v4_1_flash_rank_8_8ep_multimodal.yaml'))
     parser.add_argument('--dspark', action='store_true')

@@ -4,10 +4,10 @@
 
 ## 1. 准备可复用的工作目录
 
-进入本说明所在的 `native/` 目录执行。将 `CANN_ENV` 替换为 Toolkit 实际提供的环境脚本。选择一个可长期使用的 `DS41_WORK` 目录，设备算子安装脚本会记录本机绝对路径。
+从主仓根目录或 `native/` 执行以下命令。将 `CANN_ENV` 替换为本机实际的 Toolkit 环境脚本。将 `DS41_WORK` 设为仓库外可长期使用的目录。上游设备算子构建脚本要求构建目录路径不含空白和通配符，安装脚本会记录本机绝对路径。
 
 ```bash
-export NATIVE_DIR="$PWD"
+export NATIVE_DIR="$(git rev-parse --show-toplevel)/native"
 export DS41_WORK="${DS41_WORK:-$HOME/dsv41-mini-work}"
 export CANN_ENV="${CANN_ENV:-/usr/local/Ascend/ascend-toolkit/set_env.sh}"
 mkdir -p "$DS41_WORK"
@@ -25,27 +25,33 @@ python -m pip install -r "$NATIVE_DIR/requirements.txt"
 python -c 'import torch, torch_npu, torchair, cann_ops_nn, cann_ops_transformer; print(torch.__version__, torch_npu.__version__)'
 ```
 
-## 2. 获取三个固定版本的源码
+## 2. 准备固定版本的源码
+
+递归克隆已初始化子模块。普通克隆先从主仓根目录或 `native/` 执行以下命令，Git 会检出主仓记录的固定提交。
 
 ```bash
-export RECIPES_ROOT="$DS41_WORK/cann-recipes-infer"
-git clone https://gitcode.com/easy-cann/cann-recipes-infer.git "$RECIPES_ROOT"
-git -C "$RECIPES_ROOT" checkout --detach 2239704f489094605cf6db9bf9d5837841754c1c
-git clone https://gitcode.com/cann/ops-transformer.git "$DS41_WORK/ops-transformer"
-git -C "$DS41_WORK/ops-transformer" checkout --detach ef931ccf753524513fedc6efb26eff72ab670a08
-git clone https://gitcode.com/cann/cannbot-dsl.git "$DS41_WORK/cannbot-dsl"
-git -C "$DS41_WORK/cannbot-dsl" checkout --detach a095097ea4c66711b606c985c2a76e48ab9b0c3e
+git -C "$(git rev-parse --show-toplevel)" submodule update --init --recursive
 ```
 
-框架 checkout 中的 `executor/` 提供模型注册、调度和加载，`models/deepseek_v4_1/` 提供模型与部署 YAML，`module/` 提供共享量化和专家层，`ops/ascendc/` 提供设备算子和 C++ 扩展。模型运行时仍需通过 `PYTHONPATH` 找到它。后两个源码仓用于构建。
+再准备两个算子项目。脚本使用上一步设置的 `DS41_WORK`。第一次会下载，之后可以离线复用同一目录下版本正确、工作树干净的源码。版本冲突或存在本地修改时，选择一个新工作目录即可保留原有文件。
+
+```bash
+bash "$NATIVE_DIR/prepare_sources.sh"
+```
+
+| 来源及固定提交 | 本地位置 | 用途 |
+|---|---|---|
+| [cann-recipes-infer · 2239704](https://gitcode.com/easy-cann/cann-recipes-infer/tree/2239704f489094605cf6db9bf9d5837841754c1c) | `$NATIVE_DIR/deps/cann-recipes-infer` | 模型、执行器、部署 YAML、四个设备算子和 PyTorch C++ 扩展。 |
+| [ops-transformer · ef931cc](https://gitcode.com/cann/ops-transformer/tree/ef931ccf753524513fedc6efb26eff72ab670a08) | `$DS41_WORK/src/ops-transformer` | CompressorV2 设备算子和六个 DS41 PyTorch 适配器。 |
+| [cannbot-dsl · a095097](https://gitcode.com/cann/cannbot-dsl/tree/a095097ea4c66711b606c985c2a76e48ab9b0c3e) | `$DS41_WORK/src/cannbot-dsl` | DS41 的 Python 算子与元数据实现。安装的 `cannbot-dsl==0.8.2` 提供编译和运行这些实现的环境。 |
+
+三个项目根目录各有 `LICENSE`，cann-recipes-infer 的设备算子另附 `ops/LICENSE`。cann-recipes-infer 和 ops-transformer 的第三方声明在各自根目录的 `Third_Party_Open_Source_Software_Notice`。
 
 ## 3. 构建 Python 适配层和设备算子
 
 ```bash
-bash "$NATIVE_DIR/prepare_python_ops.sh" \
-  "$DS41_WORK/ops-transformer" "$DS41_WORK/cannbot-dsl" "$DS41_WORK/python_ops"
-bash "$NATIVE_DIR/build_smoke_ops.sh" \
-  "$DS41_WORK/ops-transformer" "$DS41_WORK/native_build"
+bash "$NATIVE_DIR/prepare_python_ops.sh" "$DS41_WORK/python_ops"
+bash "$NATIVE_DIR/build_smoke_ops.sh" "$DS41_WORK/native_build"
 ```
 
 两个命令各自创建一个新输出目录，可在后续运行中复用同一套产物。
@@ -57,18 +63,17 @@ bash "$NATIVE_DIR/build_smoke_ops.sh" \
 | `native_build/opp/` | Ascend 950 设备算子包，包含 HcPre、MoE 门控 top-k、KV 压缩写回、SwiGLU 量化，以及从 ops-transformer 编入的 CompressorV2。 |
 | `native_build/ascendc/torch_ops_extension/` | `custom_ops` 扩展，按本机 Python、PyTorch、torch-npu 和 CANN 的二进制接口编译。 |
 
-换主机或更换安装目录时，在目标位置重新安装设备算子包。Python、torch-npu 或 CANN 版本变更时重新构建扩展。运行时还会即时编译部分 DSL 和 C++ 内核，编译器和可写缓存目录需要保留。
+换主机时在目标机器重新构建设备算子包和 C++ 扩展，扩展会使用本机 CPU 指令集。若只更换安装目录，需在目标位置重新安装设备算子包。Python、torch-npu 或 CANN 版本变更时重新构建扩展。运行时还会即时编译部分 DSL 和 C++ 内核，编译器和可写缓存目录需要保留。
 
 ## 4. 加载并检查运行环境
 
-新开终端时重新设置 `DS41_WORK` 和 `CANN_ENV`，然后执行下列命令。让 DS41 的 `ops` 包在 Python 搜索路径上排在框架 checkout 前面。
+新开终端时重新设置 `DS41_WORK` 和 `CANN_ENV`，然后执行下列命令。入口会从子模块加载框架。这里设置两个 Python 算子包与本机 C++ 扩展的搜索路径。
 
 ```bash
 source "$DS41_WORK/venv/bin/activate"
 source "$CANN_ENV"
 source "$DS41_WORK/native_build/opp/vendors/customize/bin/set_env.bash"
-export RECIPES_ROOT="$DS41_WORK/cann-recipes-infer"
-export PYTHONPATH="$DS41_WORK/python_ops/experimental:$DS41_WORK/python_ops/current_provider:$DS41_WORK/native_build/ascendc/torch_ops_extension:$RECIPES_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$DS41_WORK/python_ops/experimental:$DS41_WORK/python_ops/current_provider:$DS41_WORK/native_build/ascendc/torch_ops_extension${PYTHONPATH:+:$PYTHONPATH}"
 export CANNBOTDSL_CACHE_DIR="$DS41_WORK/cache/dsl"
 export TORCH_EXTENSIONS_DIR="$DS41_WORK/cache/torch"
 export OMP_NUM_THREADS=1
@@ -76,4 +81,4 @@ mkdir -p "$CANNBOTDSL_CACHE_DIR" "$TORCH_EXTENSIONS_DIR"
 python -c 'import torch_npu, cann_ops_transformer.ops, cann_ops_transformer_experimental, custom_ops; from cann_ops_transformer.ops.ds41 import compressor, mixed_quant_sparse_flash_mla; print("DS41 imports OK")'
 ```
 
-接下来按[运行说明](README.md)准备两个模型文件、选择一张卡并执行整网测试。
+接下来准备模型配置和聊天模板。子模块、模型文件、Python 包和构建产物就位后，可在该主机离线运行普通生成和 DSpark。首次推理会即时编译部分算子。[运行说明](README.md)

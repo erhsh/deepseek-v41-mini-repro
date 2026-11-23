@@ -1,0 +1,3 @@
+[submodule "cann-recipes-infer"]
+	path = native/deps/cann-recipes-infer
+	url = https://gitcode.com/easy-cann/cann-recipes-infer.git

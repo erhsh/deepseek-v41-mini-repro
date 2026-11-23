@@ -1,0 +1,3 @@
+# Git commits used to build the native DS41 operators.
+OPS_TRANSFORMER_REV=ef931ccf753524513fedc6efb26eff72ab670a08
+CANNBOT_DSL_REV=a095097ea4c66711b606c985c2a76e48ab9b0c3e
