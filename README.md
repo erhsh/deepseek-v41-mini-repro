@@ -1,44 +1,70 @@
 # DeepSeek-V4.1-Flash 微缩复现
 
-两套入口都使用合成图文和在内存中初始化的权重。只有 CPU 时，可以从上游参考版开始。要实际执行 cann-recipes-infer 的融合算子，使用 Ascend 950PR 上的仓库实现版。
+用一条合成图文请求，观察 DeepSeek-V4.1-Flash 如何编码图像、预填充上下文，再逐步生成 token。两套入口都在本地构造词表、输入和测试权重，适合阅读模型前向流程，也适合在改动模型、执行器或算子后做回归检查。
 
-| 运行条件 | [上游参考版](upstream/README.md) | [仓库实现版](native/README.md) |
+| 想验证什么 | 运行哪一版 | 实际执行的代码 |
 |---|---|---|
-| 执行入口 | `upstream/upstream_smoke.py` 直接构造官方 `Transformer` | `native/executor_smoke.py` 通过 `OfflineInference.generate()` 执行 |
-| 从官方模型下载 | 4 个文件，`inference/{model,engram,vision,image_processor}.py`，共约 80 KiB | 2 个文件，`config.json` 和 `chat_template.jinja`，共约 18 KiB |
-| 源码位置 | 入口自带 6 个 PyTorch 张量实现 | 模型、执行器与两个算子项目均来自 `3rdparty/` 下的 Git 子模块 |
-| Python 环境 | PyTorch、tokenizers、NumPy、SymPy、Pillow | 匹配的 PyTorch / torch-npu、Transformers、tokenizers、datasets、量化库、DSL 运行时等，另有 CANN 提供的 Python 包 |
-| 已测硬件路径 | Linux x86_64 CPU 或单卡 Ascend 950PR | Linux x86_64 + 单卡 Ascend 950PR，CANN 9.2.0、HCCL 和可用的本机编译工具 |
-| 编译与缓存 | CPU 流程直接使用公开 Python wheels | 构建 5 个设备算子、1 个 C++ 扩展、6 个 Python 适配器，准备 DS41 的 42 个算子源文件，产物位于主仓 `build/`（已 gitignore），首次运行还会即时编译 |
-| 通过条件 | 一次图文预填充和两步解码，位置为 0、13、14，输出 `"result": "pass"` | 普通生成或 DSpark 模式均输出 `"result": "pass"`。后者还会报告草稿验证轮数 |
+| 观察视觉编码、Engram、KV 压缩、稀疏索引、MoE 和草稿模型如何参与前向计算 | 上游参考版，支持 Linux x86_64 CPU 或单卡 Ascend 950PR | 直接构造官方 `Transformer`，用 6 个 PyTorch 张量实现补齐上游算子接口。[参考版入口](upstream/upstream_repro.py) |
+| 验证图文请求能否经过调度器、设备算子和主模型，完成普通生成或 DSpark 草稿验证 | 昇腾原生版，单卡 Ascend 950PR | 由 `cann-recipes-infer` 的 `OfflineInference.generate()` 执行请求，并检查设备上的 logits。[原生版入口](native/executor_repro.py) |
 
-两版获取的官方文件均固定在 `314113f8a7dadb388215396ba5fbee2c610a04d6`。随机权重只用于检查执行路径与数值是否有限。启动时无需完整权重分片、分片索引、官方分词器或外部数据集。[官方模型文件](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/314113f8a7dadb388215396ba5fbee2c610a04d6)
+## 运行复现
 
-## 克隆方式
+以下命令均从仓库根目录执行，两条路径可独立运行。
 
-只运行上游参考版可以普通克隆，然后按 [upstream/README.md](upstream/README.md) 准备四个官方文件。它独立于 `native/` 和子模块。
+### 上游参考版
 
-运行昇腾仓库实现版时，把 `REPRO_SOURCE` 设为主仓的 Git 地址或本机绝对路径，在目标父目录克隆并进入工作目录。
+默认在 CPU 上运行，复用 `build/inference/` 中的模型文件并自动补齐缺项。可用 `--source DIR` 指定已有的完整目录，用 `--device npu:0` 选择可见的首张昇腾卡。[启动脚本](run_upstream_repro.sh) · [参考版说明](upstream/README.md)
 
 ```bash
-git clone --recurse-submodules "$REPRO_SOURCE" dsv41-mini-run
-cd dsv41-mini-run
+bash run_upstream_repro.sh
 ```
 
-在已有的普通克隆中，从主仓根目录初始化子模块。
+### 昇腾原生版
+
+下面以物理卡 `0` 为例，运行时替换为分配给你的卡号。默认依次执行普通生成和 DSpark。单独复跑某一项时，在命令末尾加上 `normal` 或 `dspark`。[启动脚本](run_native_repro.sh) · [原生版说明](native/README.md)
 
 ```bash
-git submodule update --init --recursive
+ASCEND_RT_VISIBLE_DEVICES=0 bash run_native_repro.sh
 ```
 
-`native/executor_smoke.py` 提供微缩配置、合成输入、权重初始化和验收逻辑。Git 在 `3rdparty/` 下检出固定版本的 cann-recipes-infer、ops-transformer 和 cannbot-dsl 三个子模块。在就绪的 Python 与 CANN 环境下，可用主仓根的 `run_native_smoke.sh` 一键完成准备与运行；也可按顺序完成[环境搭建与算子构建](native/native_environment.md)和[模型文件准备与推理](native/README.md)。
+两种模式分别写入日志，可查看各自最后一行的 JSON。
 
-本项目的许可证和第三方声明位于主仓根目录。子模块和仓外依赖保留各自的许可证与声明。[本项目许可证](LICENSE) · [第三方声明](Third_Party_Open_Source_Software_Notice)
+```bash
+tail -n 1 build/logs/normal.log build/logs/dspark.log
+```
 
-## 已验证范围
+## 如何判断通过
 
-上游版在两个全新的 Python 3.12 虚拟环境中通过测试。CPU 使用 PyTorch 2.10.0+cpu，Ascend 950PR 使用 PyTorch 2.12.0+cpu、torch-npu 2.12.0.post2 和 CANN 9.3.0，两者读取同一组四个官方文件。
+三个用例通过时均以状态码 `0` 退出，并输出 `"result": "pass"`。CPU 参考版将结果打印到终端，昇腾原生版还会将结果写入对应日志。
 
-昇腾仓库实现版从新的递归克隆构建了 5 个设备算子和 PyTorch C++ 扩展，在 Ascend 950PR、CANN 9.2.0 上分别完成普通生成和 DSpark。普通生成输出 3 个 token，DSpark 完成 4 轮草稿核验并输出 5 个 token。实测两条路径各有 80 和 81 个带源码文件的框架模块从子模块加载，构建和推理结束后子模块工作树干净。上游参考版也在未初始化子模块的普通克隆中通过了 CPU 测试。
+| 用例 | 验收时看什么 | 单机实测结果 |
+|---|---|---|
+| CPU 参考版 | `stages` 记录位置 0、13、14，三步的 `logits_shape` 均为 `[1, 128]`，logits 有限且非全零 | 13 个 token 的图文预填充后完成两步解码。视觉编码器执行 1 次，6 个文本层各执行 3 次。 |
+| 昇腾普通生成 | `calls.prefill` 为 1，`calls.vision` 和 `calls.decode` 均大于 0 | 视觉编码 1 次，解码调用 3 次，输出 3 个 token。 |
+| 昇腾 DSpark | 满足普通生成的检查，且 `speculative_forwards` 中的计数之和大于 0 | 视觉编码 1 次，解码调用 11 次，完成 4 轮草稿验证，输出 5 个 token。 |
 
-本用例检查图文预填充、解码、输出形状和有限值。正式模型的输出质量需要真实权重验证，多卡通信需要目标拓扑验证。[昇腾环境复建说明](native/native_environment.md)
+昇腾版的 `calls.decode` 统计解码阶段语言模型输出头的调用次数。DSpark 会对草稿进行验证，因此这个计数可以大于最终输出的 token 数。测试权重用于检查执行路径、输出形状和数值有效性。生成质量需要用真实权重评估，多卡通信需要在目标拓扑上验证。
+
+## 依赖关系
+
+箭头由提供方指向使用方。两版使用同一固定版本的官方文件。参考版读取模型实现，原生版读取配置和聊天模板，模型实现由 `cann-recipes-infer` 提供。[官方模型版本](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/314113f8a7dadb388215396ba5fbee2c610a04d6)
+
+```mermaid
+flowchart TD
+    official["DeepSeek-V4.1-Flash"] -->|"模型、视觉、Engram、图像处理"| reference["上游参考版"]
+    kernels["主仓的 6 个 PyTorch 算子实现"] --> reference
+    official -->|"config.json 和 chat_template.jinja"| native["昇腾原生版"]
+    recipes["cann-recipes-infer"] -->|"模型、执行器和部署配方"| native
+    recipes -->|"4 个设备算子和 custom_ops 扩展"| build["本机算子产物 build/"]
+    ops["ops-transformer"] -->|"CompressorV2 和 6 个 PyTorch 适配器"| build
+    dsl["cannbot-dsl"] -->|"42 个 DS41 算子与元数据源文件"| build
+    build --> native
+```
+
+三个外部仓都固定在 `3rdparty/` 下。运行原生版时，执行器和模型直接从 `cann-recipes-infer` 导入，5 个设备算子和 1 个 C++ 扩展编译到 `build/native_build/`，适配器和 DSL 源文件位于 `build/python_ops/`。首次推理还会即时编译部分算子。CPU 参考版独立于这三个子模块。[子模块清单](.gitmodules) · [算子来源与构建说明](native/native_environment.md)
+
+此前的独立验证中，上游参考版在未初始化子模块的工作树上通过了 CPU 测试。昇腾原生版的普通生成和 DSpark 分别从子模块加载了 80 和 81 个带源码文件的框架模块，构建和推理结束后子模块工作树干净。
+
+## 许可证
+
+子模块和仓外依赖保留各自的许可证与声明。[本项目许可证](LICENSE) · [第三方声明](Third_Party_Open_Source_Software_Notice)

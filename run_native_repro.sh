@@ -2,9 +2,9 @@
 # DeepSeek-V4.1-Flash 仓库实现版 (native) 一键运行脚本
 #
 # 用法:
-#   bash run_native_smoke.sh              # 自动完成全部准备, 然后跑 普通生成 + DSpark
-#   bash run_native_smoke.sh normal       # 只跑普通生成
-#   bash run_native_smoke.sh dspark       # 只跑 DSpark
+#   bash run_native_repro.sh              # 自动完成全部准备, 然后跑 普通生成 + DSpark
+#   bash run_native_repro.sh normal       # 只跑普通生成
+#   bash run_native_repro.sh dspark       # 只跑 DSpark
 #
 # 运行前提 (脚本不代管, 请自行保证):
 #   - 已激活含 PyTorch / torch-npu 等依赖的 Python 环境 (python 在 PATH 上)
@@ -23,10 +23,16 @@
 
 set -euo pipefail
 
+usage() {
+    echo "用法: bash ${0##*/} [normal|dspark|all]"
+    echo "默认按顺序运行普通生成和 DSpark。"
+}
+
 MODE="${1:-all}"
 case "$MODE" in
     normal|dspark|all) ;;
-    *) echo "用法: bash $0 [normal|dspark|all]" >&2; exit 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
 esac
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")" && pwd -P)}"
@@ -80,7 +86,7 @@ if [[ -f "$BUILD_DIR/native_build/opp/vendors/customize/bin/set_env.bash" ]]; th
     info "设备算子与 custom_ops 扩展已就位 (build/native_build)"
 else
     info "构建设备算子 (OPS_CPU_NUMBER=$OPS_CPU_NUMBER, 约 5-30 分钟)..."
-    bash "$NATIVE_DIR/build_smoke_ops.sh" "$REPO_ROOT/3rdparty/ops-transformer" "$BUILD_DIR/native_build"
+    bash "$NATIVE_DIR/build_repro_ops.sh" "$REPO_ROOT/3rdparty/ops-transformer" "$BUILD_DIR/native_build"
 fi
 
 # ---- 5. 模型配置 ----
@@ -96,10 +102,10 @@ else
 fi
 
 # ---- 6. 运行时环境 ----
-# shellcheck disable=SC1090
 # customize 的 set_env.bash 直接追加以下变量, 先兜底避免 set -u 下 unbound 报错
 export ASCEND_CUSTOM_OPP_PATH="${ASCEND_CUSTOM_OPP_PATH:-}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+# shellcheck source=/dev/null
 source "$BUILD_DIR/native_build/opp/vendors/customize/bin/set_env.bash" >/dev/null 2>&1
 export PYTHONPATH="$BUILD_DIR/python_ops/experimental:$BUILD_DIR/python_ops/current_provider:$BUILD_DIR/native_build/ascendc/torch_ops_extension${PYTHONPATH:+:$PYTHONPATH}"
 export CANNBOTDSL_CACHE_DIR="$BUILD_DIR/cache/dsl"
@@ -137,17 +143,17 @@ else
     info "自动选择当前最空闲的 NPU 卡: $card"
 fi
 
-# ---- 8. 运行冒烟 ----
+# ---- 8. 运行复现 ----
 LOG_DIR="$BUILD_DIR/logs"
 mkdir -p "$LOG_DIR"
 
-run_smoke() {
+run_repro() {
     local label=$1
     shift
     local log="$LOG_DIR/${label}.log"
     local rc=0 start=$SECONDS
     info "运行 $label (日志: $log)..."
-    $PYTHON "$NATIVE_DIR/executor_smoke.py" --source "$MODEL_SOURCE" "$@" 2>&1 | tee "$log" || rc=$?
+    $PYTHON "$NATIVE_DIR/executor_repro.py" --source "$MODEL_SOURCE" "$@" 2>&1 | tee "$log" || rc=$?
     local last
     last=$(grep -o '{"result".*}' "$log" | tail -1 || true)
     if [[ $rc -eq 0 && "${last:-}" == *'"result": "pass"'* ]]; then
@@ -158,10 +164,10 @@ run_smoke() {
 }
 
 case "$MODE" in
-    normal) run_smoke normal ;;
-    dspark) run_smoke dspark --dspark ;;
-    all)    run_smoke normal
-            run_smoke dspark --dspark ;;
+    normal) run_repro normal ;;
+    dspark) run_repro dspark --dspark ;;
+    all)    run_repro normal
+            run_repro dspark --dspark ;;
 esac
 
 info "完成: 全部通过的运行模式 = $MODE"

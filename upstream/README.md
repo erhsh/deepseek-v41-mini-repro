@@ -1,6 +1,10 @@
 # DeepSeek-V4.1-Flash 上游参考实现的微缩版
 
-在 Linux x86_64 CPU 或单张昇腾 NPU 上，运行官方模型的 6 层文本主干、1 层视觉编码器和 3 层 DSpark 草稿模型。入口在内存中构造分词器、图文输入和测试权重，并用 PyTorch 张量运算实现 6 个上游 CUDA TileLang 接口。在新仓库中可以只复制本目录。下列命令从本 README 所在目录执行。
+在 Linux x86_64 CPU 或单张昇腾 NPU 上，运行官方模型的 6 层文本主干、1 层视觉编码器和 3 层 DSpark 草稿模型。入口在内存中构造分词器、图文输入和测试权重，并用 PyTorch 张量运算实现 6 个上游 CUDA TileLang 接口。
+
+从仓库根目录执行 `bash run_upstream_repro.sh` 即可在 CPU 上复现。脚本会补齐 `build/inference/` 中缺少的模型文件，文件齐全后可离线运行。已有完整源码目录时，可传入 `--source DIR`，相对路径从当前工作目录解析。用 `--device npu:0` 可在可见的首张昇腾卡上运行。[启动脚本](../run_upstream_repro.sh)
+
+也可以只复制本目录，直接运行 Python 入口。下列命令从本 README 所在目录执行。
 
 ## 1. 取得四个官方源文件
 
@@ -25,7 +29,7 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install 'torch==2.10.0+cpu' --extra-index-url https://download.pytorch.org/whl/cpu
 python -m pip install -r requirements.txt
-OMP_NUM_THREADS=1 python upstream_smoke.py --device cpu
+OMP_NUM_THREADS=1 python upstream_repro.py --device cpu
 ```
 
 ## 3. 在昇腾 NPU 上运行（可选）
@@ -39,7 +43,7 @@ source "${CANN_ENV:-/usr/local/Ascend/ascend-toolkit/set_env.sh}"
 python -m pip install 'torch==2.12.0+cpu' --extra-index-url https://download.pytorch.org/whl/cpu
 python -m pip install 'torch-npu==2.12.0.post2' -r requirements.txt
 ASCEND_RT_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 \
-  python upstream_smoke.py --device npu:0
+  python upstream_repro.py --device npu:0
 ```
 
 ## 通过条件

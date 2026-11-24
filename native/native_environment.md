@@ -2,7 +2,7 @@
 
 以下步骤面向 Linux x86_64、Python 3.12 和 Ascend 950PR。按顺序在同一个 Bash 终端运行。单卡也会初始化 HCCL。实测主机为 Ubuntu 24.04.4 LTS，使用驱动 25.7.rc1、CANN Toolkit 9.2.0 和同版本 Ascend 950 OPP。先按本机产品、架构和驱动安装 Toolkit、设备算子包及编译工具，确认 `npu-smi info` 能识别设备。Python 需有 venv 支持和同版本的开发头文件（`Python.h`，Ubuntu 软件包为 `python3.12-venv`、`python3.12-dev`）。编译用到 Git、tar、GCC/G++（实测 13.3，支持 C++17）、CMake（项目要求 3.16 及以上）、make 和 Ninja。系统环境配套见[昇腾软件安装说明](https://www.hiascend.com/document)。
 
-主仓根的 [run_native_smoke.sh](../run_native_smoke.sh) 将下文的子模块初始化、构建、模型文件下载和冒烟合并为一键脚本；它不代管 Python 与 CANN 环境，需先完成本页第 1 节。以下为手动分步流程。仓库约定：外部代码仓以 Git 子模块管理，位于 `3rdparty/`；构建产物、远端下载与缓存统一放在主仓 `build/`（已加入 `.gitignore`）。
+完成第 1 节后，可在主仓根目录执行 `bash run_native_repro.sh`，由脚本初始化子模块、构建算子、准备模型文件并运行复现。也可按下文分步执行。外部代码仓以 Git 子模块管理，位于 `3rdparty/`。构建产物、模型文件与缓存统一放在主仓 `build/`（已加入 `.gitignore`）。[启动脚本](../run_native_repro.sh)
 
 ## 1. 准备可复用的 Python 环境
 
@@ -35,7 +35,7 @@ git -C "$(git rev-parse --show-toplevel)" submodule update --init --recursive
 
 | 来源及固定提交 | 本地位置 | 用途 |
 |---|---|---|
-| [cann-recipes-infer · 2239704](https://gitcode.com/easy-cann/cann-recipes-infer/tree/2239704f489094605cf6db9bf9d5837841754c1c) | `3rdparty/cann-recipes-infer` | 模型、执行器、部署 YAML、四个设备算子和 PyTorch C++ 扩展。 |
+| [cann-recipes-infer · 2239704](https://gitcode.com/cann/cann-recipes-infer/tree/2239704f489094605cf6db9bf9d5837841754c1c) | `3rdparty/cann-recipes-infer` | 模型、执行器、部署 YAML、四个设备算子和 PyTorch C++ 扩展。 |
 | [ops-transformer · ef931cc](https://gitcode.com/cann/ops-transformer/tree/ef931ccf753524513fedc6efb26eff72ab670a08) | `3rdparty/ops-transformer` | CompressorV2 设备算子和六个 DS41 PyTorch 适配器。 |
 | [cannbot-dsl · a095097](https://gitcode.com/cann/cannbot-dsl/tree/a095097ea4c66711b606c985c2a76e48ab9b0c3e) | `3rdparty/cannbot-dsl` | DS41 的 Python 算子与元数据实现。安装的 `cannbot-dsl==0.8.2` 提供编译和运行这些实现的环境。 |
 
@@ -48,7 +48,7 @@ git -C "$(git rev-parse --show-toplevel)" submodule update --init --recursive
 ```bash
 export REPO_ROOT="$(git rev-parse --show-toplevel)"
 bash "$NATIVE_DIR/prepare_python_ops.sh" "$REPO_ROOT/build/python_ops"
-bash "$NATIVE_DIR/build_smoke_ops.sh" "$REPO_ROOT/build/native_build"
+bash "$NATIVE_DIR/build_repro_ops.sh" "$REPO_ROOT/build/native_build"
 ```
 
 | 产物 | 内容与用途 |
