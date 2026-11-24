@@ -3,12 +3,12 @@
 set -euo pipefail
 
 native_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+repo_root=$(cd -- "$native_dir/.." && pwd -P)
 source "$native_dir/source_revisions.sh"
 case $# in
     1)
-        src_root="${DS41_WORK:-$HOME/dsv41-mini-work}/src"
-        ops_checkout="$src_root/ops-transformer"
-        dsl_checkout="$src_root/cannbot-dsl"
+        ops_checkout="$repo_root/3rdparty/ops-transformer"
+        dsl_checkout="$repo_root/3rdparty/cannbot-dsl"
         output=$1
         ;;
     3)
@@ -28,7 +28,7 @@ if [[ -e "$output" || -L "$output" ]]; then
 fi
 if ! git -C "$ops_checkout" cat-file -e "$OPS_TRANSFORMER_REV^{commit}" 2>/dev/null ||
    ! git -C "$dsl_checkout" cat-file -e "$CANNBOT_DSL_REV^{commit}" 2>/dev/null; then
-    echo "Missing pinned operator sources. Run bash \"$native_dir/prepare_sources.sh\" first." >&2
+    echo "Missing pinned operator sources. From the repository root, run: git submodule update --init --recursive" >&2
     exit 1
 fi
 mkdir -p "$(dirname "$output")"

@@ -2,4 +2,4 @@
 .venv-npu/
 __pycache__/
 *.py[cod]
-third_party/
+build/

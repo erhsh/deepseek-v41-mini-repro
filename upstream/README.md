@@ -9,12 +9,12 @@
 ```bash
 revision=314113f8a7dadb388215396ba5fbee2c610a04d6
 base="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/resolve/$revision/inference"
-mkdir -p third_party/inference
+mkdir -p ../build/inference
 curl --fail --fail-early --location --retry 2 --remote-name-all \
-  --output-dir third_party/inference "$base/"{model,engram,vision,image_processor}.py
+  --output-dir ../build/inference "$base/"{model,engram,vision,image_processor}.py
 ```
 
-脚本默认从自身目录下的 `third_party/inference/` 读取源码，默认在 CPU 上运行。已有相同版本源码时，可直接将其 `inference/` 路径传给脚本。合成图像和分词器覆盖这次请求所需的数据，因此模型权重分片和官方 tokenizer 文件均可省略。
+脚本默认从主仓根的 `build/inference/` 读取源码，默认在 CPU 上运行。已有相同版本源码时，可直接将其 `inference/` 路径传给脚本。合成图像和分词器覆盖这次请求所需的数据，因此模型权重分片和官方 tokenizer 文件均可省略。
 
 ## 2. 在 CPU 上最小复现
 
@@ -25,7 +25,7 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install 'torch==2.10.0+cpu' --extra-index-url https://download.pytorch.org/whl/cpu
 python -m pip install -r requirements.txt
-OMP_NUM_THREADS=1 python upstream_smoke.py --source third_party/inference --device cpu
+OMP_NUM_THREADS=1 python upstream_smoke.py --device cpu
 ```
 
 ## 3. 在昇腾 NPU 上运行（可选）
@@ -39,7 +39,7 @@ source "${CANN_ENV:-/usr/local/Ascend/ascend-toolkit/set_env.sh}"
 python -m pip install 'torch==2.12.0+cpu' --extra-index-url https://download.pytorch.org/whl/cpu
 python -m pip install 'torch-npu==2.12.0.post2' -r requirements.txt
 ASCEND_RT_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 \
-  python upstream_smoke.py --source third_party/inference --device npu:0
+  python upstream_smoke.py --device npu:0
 ```
 
 ## 通过条件

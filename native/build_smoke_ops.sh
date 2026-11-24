@@ -4,10 +4,11 @@
 set -euo pipefail
 
 native_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+repo_root=$(cd -- "$native_dir/.." && pwd -P)
 source "$native_dir/source_revisions.sh"
 case $# in
     1)
-        ops_root="${DS41_WORK:-$HOME/dsv41-mini-work}/src/ops-transformer"
+        ops_root="$repo_root/3rdparty/ops-transformer"
         output=$1
         ;;
     2)
@@ -20,14 +21,14 @@ case $# in
         ;;
 esac
 
-recipes="$native_dir/deps/cann-recipes-infer"
+recipes="$repo_root/3rdparty/cann-recipes-infer"
 if [[ ! -f "$recipes/ops/ascendc/build.sh" ]]; then
     echo "Missing cann-recipes-infer. From the repository root, run: git submodule update --init --recursive" >&2
     exit 1
 fi
 compressor_tree="$OPS_TRANSFORMER_REV:experimental/attention/compressor_v2"
 if ! git -C "$ops_root" cat-file -e "$compressor_tree/op_kernel/compressor_v2.cpp" 2>/dev/null; then
-    echo "Missing ops-transformer revision $OPS_TRANSFORMER_REV under $ops_root. Run native/prepare_sources.sh." >&2
+    echo "Missing ops-transformer revision $OPS_TRANSFORMER_REV under $ops_root. From the repository root, run: git submodule update --init --recursive" >&2
     exit 1
 fi
 : "${ASCEND_HOME_PATH:?Source your CANN environment first}"

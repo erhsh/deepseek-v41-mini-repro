@@ -181,7 +181,7 @@ def initialize(model):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    default_source = Path(__file__).resolve().parent / 'third_party' / 'inference'
+    default_source = Path(__file__).resolve().parent.parent / 'build' / 'inference'
     parser.add_argument('--source', type=Path, default=default_source,
                         help='Directory containing the four official inference source files.')
     parser.add_argument('--device', default='cpu', help='Run on CPU (default) or an Ascend device such as npu:0.')

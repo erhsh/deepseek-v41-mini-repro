@@ -15,7 +15,7 @@ from importlib.util import module_from_spec
 from pathlib import Path
 from unittest.mock import patch
 
-RECIPES_DIR = Path(__file__).resolve().parent / 'deps' / 'cann-recipes-infer'
+RECIPES_DIR = Path(__file__).resolve().parent.parent / '3rdparty' / 'cann-recipes-infer'
 if not (RECIPES_DIR / 'executor' / 'offline' / 'offline_inference.py').is_file():
     raise SystemExit(
         f'Missing cann-recipes-infer submodule at {RECIPES_DIR}. '
@@ -178,7 +178,7 @@ def run(args, tmp):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    default_source = Path.home() / 'dsv41-mini-work' / 'model'
+    default_source = Path(__file__).resolve().parent.parent / 'build' / 'model'
     parser.add_argument('--source', type=Path, default=Path(os.environ.get('MODEL_SOURCE', default_source)),
                         help='Directory containing the official config.json and chat_template.jinja.')
     model_config_dir = RECIPES_DIR / 'models' / 'deepseek_v4_1' / 'config'

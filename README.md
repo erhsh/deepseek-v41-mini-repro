@@ -6,10 +6,10 @@
 |---|---|---|
 | 执行入口 | `upstream/upstream_smoke.py` 直接构造官方 `Transformer` | `native/executor_smoke.py` 通过 `OfflineInference.generate()` 执行 |
 | 从官方模型下载 | 4 个文件，`inference/{model,engram,vision,image_processor}.py`，共约 80 KiB | 2 个文件，`config.json` 和 `chat_template.jinja`，共约 18 KiB |
-| 源码位置 | 入口自带 6 个 PyTorch 张量实现 | 模型和执行器来自 Git 子模块。两个算子项目下载到仓库外的 `$DS41_WORK/src/` |
+| 源码位置 | 入口自带 6 个 PyTorch 张量实现 | 模型、执行器与两个算子项目均来自 `3rdparty/` 下的 Git 子模块 |
 | Python 环境 | PyTorch、tokenizers、NumPy、SymPy、Pillow | 匹配的 PyTorch / torch-npu、Transformers、tokenizers、datasets、量化库、DSL 运行时等，另有 CANN 提供的 Python 包 |
 | 已测硬件路径 | Linux x86_64 CPU 或单卡 Ascend 950PR | Linux x86_64 + 单卡 Ascend 950PR，CANN 9.2.0、HCCL 和可用的本机编译工具 |
-| 编译与缓存 | CPU 流程直接使用公开 Python wheels | 构建 5 个设备算子、1 个 C++ 扩展、6 个 Python 适配器，准备 DS41 的 42 个算子源文件，首次运行还会即时编译 |
+| 编译与缓存 | CPU 流程直接使用公开 Python wheels | 构建 5 个设备算子、1 个 C++ 扩展、6 个 Python 适配器，准备 DS41 的 42 个算子源文件，产物位于主仓 `build/`（已 gitignore），首次运行还会即时编译 |
 | 通过条件 | 一次图文预填充和两步解码，位置为 0、13、14，输出 `"result": "pass"` | 普通生成或 DSpark 模式均输出 `"result": "pass"`。后者还会报告草稿验证轮数 |
 
 两版获取的官方文件均固定在 `314113f8a7dadb388215396ba5fbee2c610a04d6`。随机权重只用于检查执行路径与数值是否有限。启动时无需完整权重分片、分片索引、官方分词器或外部数据集。[官方模型文件](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/314113f8a7dadb388215396ba5fbee2c610a04d6)
@@ -31,7 +31,7 @@ cd dsv41-mini-run
 git submodule update --init --recursive
 ```
 
-`native/executor_smoke.py` 提供微缩配置、合成输入、权重初始化和验收逻辑。Git 在 `native/deps/cann-recipes-infer/` 检出固定版本的原模型、执行器、YAML 和 Ascend C 源码。另两个算子项目由环境准备脚本下载。按顺序完成[环境搭建与算子构建](native/native_environment.md)和[模型文件准备与推理](native/README.md)。
+`native/executor_smoke.py` 提供微缩配置、合成输入、权重初始化和验收逻辑。Git 在 `3rdparty/` 下检出固定版本的 cann-recipes-infer、ops-transformer 和 cannbot-dsl 三个子模块。在就绪的 Python 与 CANN 环境下，可用主仓根的 `run_native_smoke.sh` 一键完成准备与运行；也可按顺序完成[环境搭建与算子构建](native/native_environment.md)和[模型文件准备与推理](native/README.md)。
 
 本项目的许可证和第三方声明位于主仓根目录。子模块和仓外依赖保留各自的许可证与声明。[本项目许可证](LICENSE) · [第三方声明](Third_Party_Open_Source_Software_Notice)
 

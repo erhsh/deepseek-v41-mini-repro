@@ -1,3 +1,9 @@
 [submodule "cann-recipes-infer"]
-	path = native/deps/cann-recipes-infer
+	path = 3rdparty/cann-recipes-infer
 	url = https://gitcode.com/easy-cann/cann-recipes-infer.git
+[submodule "ops-transformer"]
+	path = 3rdparty/ops-transformer
+	url = https://gitcode.com/cann/ops-transformer.git
+[submodule "cannbot-dsl"]
+	path = 3rdparty/cannbot-dsl
+	url = https://gitcode.com/cann/cannbot-dsl.git

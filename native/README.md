@@ -2,7 +2,7 @@
 
 [executor_smoke.py](executor_smoke.py) 调用 cann-recipes-infer 的 `OfflineInference.generate()`，用合成图文和测试权重在一张 Ascend 950PR 上执行预填充和解码。文本主干为 6 层、隐藏维度 5120，视觉编码器为 1 层。`--dspark` 增加 3 层草稿模型和主模型验证。
 
-首次运行按[环境复建说明](native_environment.md)初始化子模块、取得仓外算子源码、安装 Python 包并构建设备算子。入口按自身路径从 `deps/cann-recipes-infer/` 导入模型和执行器。首次使用需保留主仓的 Git 克隆，以便取得固定版本的子模块。
+首次运行可用主仓根的 [run_native_smoke.sh](../run_native_smoke.sh) 一键完成（需已激活 Python 与 CANN 环境），或按[环境复建说明](native_environment.md)分步执行。入口按自身路径从 `3rdparty/cann-recipes-infer/` 导入模型和执行器。首次使用需保留主仓的 Git 克隆，以便取得固定版本的子模块。
 
 ## 运行
 
@@ -12,7 +12,7 @@
 
 ```bash
 export NATIVE_DIR="$(git rev-parse --show-toplevel)/native"
-export MODEL_SOURCE="${MODEL_SOURCE:-${DS41_WORK:-$HOME/dsv41-mini-work}/model}"
+export MODEL_SOURCE="${MODEL_SOURCE:-$(git rev-parse --show-toplevel)/build/model}"
 revision=314113f8a7dadb388215396ba5fbee2c610a04d6
 base="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/resolve/$revision"
 mkdir -p "$MODEL_SOURCE"
@@ -20,7 +20,7 @@ curl --fail --fail-early --location --retry 2 --remote-name-all \
   --output-dir "$MODEL_SOURCE" "$base/"{config.json,chat_template.jinja}
 ```
 
-3. 选择一张可用物理卡。入口也会读取 `MODEL_SOURCE` 环境变量，未设置时默认使用 `$HOME/dsv41-mini-work/model`。下例使用卡 0，脚本内部访问可见设备 `npu:0`。
+3. 选择一张可用物理卡。入口也会读取 `MODEL_SOURCE` 环境变量，未设置时默认使用主仓 `build/model`。下例使用卡 0，脚本内部访问可见设备 `npu:0`。
 
 ```bash
 export ASCEND_RT_VISIBLE_DEVICES=0
